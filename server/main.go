@@ -1,10 +1,47 @@
 package main
 
+import (
+	"log"
+	"net"
+
+	"github.com/Alextopher/pcloud-go/shared"
+)
+
 func main() {
-	// db, err := gorm.Open(sqlite.Open("urls.db"), &gorm.Config{})
+	// Create TCP listener
+	listener, err := net.Listen("tcp", ":1337")
 
-	// Going to create a protocol similar to FTP where there is a seperate communication channel which creates worker connections
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	// TCP listener
+	for {
+		// Wait for connection
+		conn, err := listener.Accept()
 
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+
+		// Create TCPWrapper
+		tcpWrapper := shared.NewTCPWrapper(conn, true)
+
+		// Handle connection in new goroutine
+		go handleConnection(tcpWrapper)
+	}
+}
+
+func handleConnection(tcpWrapper *shared.TCPWrapper) {
+	// Elliptic curve Diffie-Hellman
+	tcpWrapper.ECDH()
+
+	log.Println("Handshake complete")
+
+	// Echo messages
+	for {
+		msg := <-tcpWrapper.Recv
+
+		tcpWrapper.Send <- msg
+	}
 }
