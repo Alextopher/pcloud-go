@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
@@ -20,6 +21,13 @@ type TCPWrapper struct {
 	Send chan []byte
 	Recv chan []byte
 
+	// ed25519 keypair
+	pub  ed25519.PublicKey
+	priv ed25519.PrivateKey
+
+	// remote public key
+	remotePub ed25519.PublicKey
+
 	// Indicates if this is the server
 	isServer bool
 
@@ -31,7 +39,7 @@ type TCPWrapper struct {
 }
 
 // NewTCPWrapper creates a new TCPWrapper and starts the read and write goroutines
-func NewTCPWrapper(conn net.Conn, isServer bool) *TCPWrapper {
+func NewTCPWrapper(conn net.Conn, isServer bool, pub ed25519.PublicKey, priv ed25519.PrivateKey) *TCPWrapper {
 	// Create read and write channels
 	send := make(chan []byte)
 	recv := make(chan []byte)
@@ -42,6 +50,8 @@ func NewTCPWrapper(conn net.Conn, isServer bool) *TCPWrapper {
 		Send:     send,
 		Recv:     recv,
 		isServer: isServer,
+		pub:      pub,
+		priv:     priv,
 	}
 
 	// Start goroutines
@@ -59,7 +69,7 @@ func (tcpWrapper *TCPWrapper) Close() {
 	close(tcpWrapper.Recv)
 }
 
-func (tcpWrapper *TCPWrapper) ECDH() error {
+func (tcpWrapper *TCPWrapper) Handshake() error {
 	// Create ecdsa keypair
 	private, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	public := private.PublicKey
@@ -125,11 +135,53 @@ func (tcpWrapper *TCPWrapper) ECDH() error {
 		tcpWrapper.localStream = cipher.NewCTR(aes2, iv)
 	}
 
+	// Exchange ed25519 public keys
+	tcpWrapper.Send <- tcpWrapper.pub
+	remotePub, ok := <-tcpWrapper.Recv
+	if !ok {
+		return fmt.Errorf("failed to receive remote ed25519 public key")
+	}
+	tcpWrapper.remotePub = remotePub
+
+	// Preform a random ed25519 challenge
+	msg := make([]byte, 64)
+	rand.Read(msg)
+
+	// Send challenge
+	tcpWrapper.Send <- msg
+
+	// Receive challenge
+	challenge, ok := <-tcpWrapper.Recv
+
+	if !ok {
+		return fmt.Errorf("failed to receive challenge")
+	}
+
+	// Sign challenge
+	signature := ed25519.Sign(tcpWrapper.priv, challenge)
+
+	// Send signature
+	tcpWrapper.Send <- signature
+
+	// Receive signature
+	remoteSignature, ok := <-tcpWrapper.Recv
+
+	if !ok {
+		return fmt.Errorf("failed to receive signature")
+	}
+
+	// Verify signature
+	if !ed25519.Verify(tcpWrapper.remotePub, msg, remoteSignature) {
+		return fmt.Errorf("invalid signature from remote")
+	}
+
+	// Set handshake complete
 	tcpWrapper.handshakeComplete = true
 
 	return nil
 }
 
+// recv reads messages from the connection
 func (tcpWrapper *TCPWrapper) recv() {
 	// Read from connection
 	for {
@@ -164,6 +216,7 @@ func (tcpWrapper *TCPWrapper) recv() {
 	}
 }
 
+// send writes messages to the connection
 func (tcpWrapper *TCPWrapper) send() {
 	// Write to connection
 	for message := range tcpWrapper.Send {

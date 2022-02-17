@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
 
@@ -15,6 +16,13 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Load ed25519 key pair
+	pub, priv, err := shared.GetKeyPair()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Listen for connections
 	for {
 		// Wait for connection
 		conn, err := listener.Accept()
@@ -25,7 +33,7 @@ func main() {
 		}
 
 		// Create TCPWrapper
-		tcpWrapper := shared.NewTCPWrapper(conn, true)
+		tcpWrapper := shared.NewTCPWrapper(conn, true, pub, priv)
 
 		// Handle connection in new goroutine
 		go handleConnection(tcpWrapper)
@@ -33,9 +41,14 @@ func main() {
 }
 
 func handleConnection(tcpWrapper *shared.TCPWrapper) {
-	// Elliptic curve Diffie-Hellman
-	tcpWrapper.ECDH()
+	defer tcpWrapper.Close()
 
+	// Elliptic curve Diffie-Hellman
+	err := tcpWrapper.Handshake()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	log.Println("Handshake complete")
 
 	// Echo messages

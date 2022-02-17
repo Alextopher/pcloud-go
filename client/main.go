@@ -1,11 +1,18 @@
 package main
 
 import (
+	"crypto/ed25519"
 	"fmt"
+	"log"
 	"net"
 	"os"
 
 	"github.com/Alextopher/pcloud-go/shared"
+)
+
+var (
+	pub  ed25519.PublicKey
+	priv ed25519.PrivateKey
 )
 
 func main() {
@@ -16,11 +23,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Get ed25519 key pair
+	pub, priv, err = shared.GetKeyPair()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// Create TCP wrapper
-	tcpWrapper := shared.NewTCPWrapper(conn, false)
+	tcpWrapper := shared.NewTCPWrapper(conn, false, pub, priv)
 
 	// Elliptic curve Diffie-Hellman
-	tcpWrapper.ECDH()
+	tcpWrapper.Handshake()
 	fmt.Println("Handshake complete")
 
 	// Read from stdin and send to TCP connection then expect an echo

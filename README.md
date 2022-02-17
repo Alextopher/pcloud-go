@@ -7,4 +7,7 @@ A WIP personal file upload/download/tunnel client & server
 - [ ] public file upload
 - [ ] public file download
 - [ ] url shortener
-- [ ] crypto
+- [x] ECDH key exchange
+- [x] AES cipher streams
+- [x] ed25519 identity verification
+
